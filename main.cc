@@ -11,8 +11,8 @@ int main()
 {
     readCorpus("./data/trainingData.txt");
     getHmmParameters();
-    corpusPreprocess("./data/trainingData.txt", 0.8);
-    cout << calculate() << endl;
+    corpusPreprocess("./data/trainingData.txt", 5);
+    calculate();
     
     
     return 0;

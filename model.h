@@ -22,6 +22,7 @@ vector<double> prioriProbability;  //词性的先验概率
 vector<vector<double>> transformProbability;  //词性的转移验概率矩阵
 vector<vector<double>> emissionProbability;  //发射矩阵
 
+//获得基本频率统计数据
 void readCorpus(const string file)
 {
     ifstream input(file);
@@ -76,6 +77,7 @@ void readCorpus(const string file)
     charactersNum = diffChars.size();
 }
 
+//训练隐马模型参数
 void getHmmParameters()
 {
     //计算词性先验概率
@@ -95,6 +97,7 @@ void getHmmParameters()
             
             if(transformFrequencyMap.find(trans) != transformFrequencyMap.end())
             {
+                //因概率过小，所以都乘上100
                 itrans.push_back(transformFrequencyMap[trans] * 100.0 / charactersMap[front]);
             }
             else
@@ -117,6 +120,7 @@ void getHmmParameters()
 
 			if(emissonFrequencyMap.find(text) != emissonFrequencyMap.end())
 			{
+			    //因概率过小，所以都乘上100
 				iemt.push_back(emissonFrequencyMap[text] * 100.0 / charactersMap[chars]);
             }
             else
@@ -128,6 +132,7 @@ void getHmmParameters()
     }
 }
 
+//使用viterbi算法解码
 void viterbi(vector<string> &v)
 {
     
@@ -176,8 +181,8 @@ void viterbi(vector<string> &v)
             double max = value[i - 1][0] * transformProbability[0][j] * emissionProbability[j][position];
             
             int index = 0;
-            //获取词i选词性j的最大价值
             temp.push_back(0.0);
+            //获取词i选词性j的最大价值
             for(decltype(charactersNum) k = 1; k < charactersNum; ++k)  //前一个词可能的词性
             {
                 temp[j] = (value[i - 1][k] * transformProbability[k][j] * emissionProbability[j][position]);
@@ -213,29 +218,39 @@ void viterbi(vector<string> &v)
     }
 }
 
-void corpusPreprocess(const string &rawData, const double partRatio)
+//判断该行数据是否属于测试集，用于交叉验证
+//total为(训练集+测试集)总行数，lineNum为判断行，fold为fold折交叉验证，no为第no次交叉验证
+bool judgeTest(int total, int lineNum, int fold, int no)
+{
+    int testSize = total / fold;
+    if((lineNum > testSize * (no - 1)) && (lineNum <= testSize * no))
+        return true;
+    else
+        return false;
+}
+
+//用于获取交叉验证所需的数据。由于系统空间有限(2GB硬盘)，所以每次验证分别获取数据，没有一次获取全部
+void corpusPreprocess(const string &rawData, const int fold)
 {
     ifstream input(rawData);
     ofstream oTestData("testData.txt", ofstream::app);
     ofstream otaggedTrainingData("taggedTrainingData.txt", ofstream::app);
-    ofstream ountaggedTrainingData("untaggedTrainingData", ofstream::app);
+    ofstream ountaggedTrainingData("untaggedTrainingData.txt", ofstream::app);
     ofstream otaggedTestData("taggedTestData.txt", ofstream::app);
     ofstream ountaggedTestData("untaggedTestData.txt", ofstream::app);
     
-    int breakpoint = static_cast<int>(partRatio * allLinenum);
     int linenumCnt = 1;
     
-    //vector<string> words;
     string lineStr, text;
     while(getline(input, lineStr))
     {
-        if(linenumCnt <= breakpoint)
+        if(judgeTest(allLinenum, linenumCnt, fold, 4))  //**注意根据1~fold修改no**
         {
-            otaggedTrainingData << lineStr << endl;
+            otaggedTestData << lineStr << endl;
         }
         else
         {
-            otaggedTestData << lineStr << endl;
+            otaggedTrainingData << lineStr << endl;
         }
         
         istringstream line(lineStr);
@@ -247,30 +262,31 @@ void corpusPreprocess(const string &rawData, const double partRatio)
             auto pos = text.find("/");
             string phrase = text.substr(0, pos);
             oTestData << phrase << " ";
-            if(linenumCnt <= breakpoint)
+            if(judgeTest(allLinenum, linenumCnt, fold, 4))  //**注意根据1~fold修改no**
             {
-                ountaggedTrainingData << phrase << " ";
+                ountaggedTestData << phrase << " ";
             }
             else
             {
-                ountaggedTestData << phrase << " ";
+                ountaggedTrainingData << phrase << " ";
             }
             
         }
         oTestData << endl;
-        if(linenumCnt <= breakpoint)
+        if(judgeTest(allLinenum, linenumCnt, fold, 4))  //**注意根据1~fold修改no**
         {
-            ountaggedTrainingData << endl;
+            ountaggedTestData << endl;
         }
         else
         {
-            ountaggedTestData << endl;
+            ountaggedTrainingData << endl;
         }
         ++linenumCnt;
     }
 }
 
-double calculate()
+//解码以及计算准确率
+void calculate()
 {
     int cntCorrect = 0;
     int cntTest = 0;
@@ -295,7 +311,7 @@ double calculate()
         }
 
         viterbi(processedSentence);
-
+        
         for(int i = 0; i < processedSentence.size(); ++i)
         {
             ++cntTest;
@@ -304,5 +320,5 @@ double calculate()
         }
     }
 
-    return (cntCorrect * 1.0 / cntTest);
+    cout << "Precision = " << cntCorrect * 1.0 / cntTest << endl;
 }
